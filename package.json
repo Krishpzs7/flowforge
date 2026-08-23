@@ -1,26 +1,23 @@
 {
   "name": "flowforge",
-  "version": "1.0.0",
-  "description": "Cloud-native visual workflow automation platform.",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Krishpzs7/flowforge.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/Krishpzs7/flowforge/issues"
-  },
-  "homepage": "https://github.com/Krishpzs7/flowforge#readme",
   "devDependencies": {
     "turbo": "^2.10.11"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": "10.9.2"
+    }
   }
 }
