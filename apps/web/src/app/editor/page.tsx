@@ -2,6 +2,7 @@ import ExecutionPanel from "@/components/layout/ExecutionPanel";
 import PropertiesPanel from "@/components/layout/PropertiesPanel";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
+import WorkflowCanvas from "@/components/workflow/WorkflowCanvas";
 
 export default function EditorPage() {
   return (
@@ -12,7 +13,7 @@ export default function EditorPage() {
         <Sidebar />
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <section className="flex-1 bg-background" />
+          <WorkflowCanvas />
           <ExecutionPanel />
         </div>
 
