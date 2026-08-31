@@ -52,3 +52,7 @@ docker-compose.override.yml
 
 # OS
 Thumbs.db
+
+# Turborepo
+.turbo/
+**/.turbo/
