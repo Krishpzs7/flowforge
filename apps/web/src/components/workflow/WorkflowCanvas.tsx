@@ -121,16 +121,33 @@ function CanvasInner() {
   const setSelectedNodeId = useWorkflowStore(
     (state) => state.setSelectedNodeId
   );
+  const saveToLocalStorage = useWorkflowStore(
+    (state) => state.saveToLocalStorage
+  );
 
+  // Initialize from localStorage on first mount.
   useEffect(() => {
     if (hasInitialized.current) {
       return;
     }
 
-    setNodes(initialNodes);
-    setEdges(initialEdges);
+    const restored = useWorkflowStore.getState().loadFromLocalStorage();
+    if (!restored) {
+      setNodes(initialNodes);
+      setEdges(initialEdges);
+    }
+
     hasInitialized.current = true;
   }, [setEdges, setNodes]);
+
+  // Auto-save whenever the workflow graph changes.
+  useEffect(() => {
+    if (!hasInitialized.current) {
+      return;
+    }
+
+    saveToLocalStorage();
+  }, [nodes, edges, saveToLocalStorage]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -256,10 +273,11 @@ function CanvasInner() {
         },
       };
 
-      setNodes([...nodes, newNode]);
+      // Keep node creation in the shared store for future undo/redo support.
+      useWorkflowStore.getState().addNode(newNode);
       setSelectedNodeId(newNode.id);
     },
-    [nodes, screenToFlowPosition, setNodes, setSelectedNodeId]
+    [screenToFlowPosition, setSelectedNodeId]
   );
 
   return (

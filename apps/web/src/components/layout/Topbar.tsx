@@ -1,40 +1,46 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { useWorkflowStore } from "@/lib/workflow-store";
 
 export default function Topbar() {
+  const nodes = useWorkflowStore((state) => state.nodes);
+  const edges = useWorkflowStore((state) => state.edges);
+  const resetDemo = useWorkflowStore((state) => state.resetDemo);
+
+  const handleReset = () => {
+    if (!confirm("Reset the demo workflow? This will overwrite your current work.")) {
+      return;
+    }
+
+    resetDemo();
+  };
+
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-muted/20 px-4">
       <div className="flex items-center gap-3">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-violet-600 text-sm font-bold text-white shadow-sm">
-          F
-        </div>
-
         <div className="flex items-baseline gap-2">
-          <h1 className="text-sm font-semibold tracking-tight">FlowForge</h1>
-
-          <span className="text-xs text-muted-foreground">
-            Order Processing
-          </span>
+          <p className="text-base font-bold tracking-tight">FlowForge</p>
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Workflow editor
+          </p>
         </div>
 
-        <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Draft
-        </span>
+        <Separator orientation="vertical" className="h-5" />
+
+        <p className="text-xs text-muted-foreground">
+          {nodes.length} node{nodes.length === 1 ? "" : "s"} · {edges.length} connection
+          {edges.length === 1 ? "" : "s"}
+        </p>
       </div>
 
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" type="button">
-          Save
+        <Button variant="ghost" size="sm" onClick={handleReset}>
+          Reset demo
         </Button>
 
-        <Button
-          size="sm"
-          type="button"
-          className="bg-violet-600 text-white hover:bg-violet-500"
-        >
-          Run workflow
-        </Button>
+        <Button size="sm">Save</Button>
       </div>
     </header>
   );
