@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
+
 import {
+  addEdge,
   Background,
   Controls,
   MiniMap,
@@ -10,6 +12,7 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  type Connection,
   type Edge,
   type Node,
   type NodeMouseHandler,
@@ -99,7 +102,10 @@ const initialEdges: Edge[] = [
     source: "webhook",
     target: "validate-order",
     animated: true,
-    style: { stroke: "#8b5cf6", strokeWidth: 2 },
+    style: {
+      stroke: "#8b5cf6",
+      strokeWidth: 2,
+    },
   },
 ];
 
@@ -130,6 +136,67 @@ function CanvasInner() {
   const handlePaneClick = () => {
     setSelectedNodeId(null);
   };
+
+  const isValidConnection = useCallback<
+  (connection: Connection | Edge) => boolean
+>(
+    (connection) => {
+      if (!connection.source || !connection.target) {
+        return false;
+      }
+
+      if (connection.source === connection.target) {
+        return false;
+      }
+
+      const sourceNode = nodes.find((node) => node.id === connection.source);
+      const targetNode = nodes.find((node) => node.id === connection.target);
+
+      const sourceNodeType = String(sourceNode?.data.nodeType ?? "");
+      const targetNodeType = String(targetNode?.data.nodeType ?? "");
+
+      if (targetNodeType === "webhook") {
+        return false;
+      }
+
+      if (sourceNodeType === "notification") {
+        return false;
+      }
+
+      const alreadyConnected = edges.some(
+        (edge) =>
+          edge.source === connection.source &&
+          edge.target === connection.target
+      );
+
+      return !alreadyConnected;
+    },
+    [edges, nodes]
+  );
+
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      if (!isValidConnection(connection)) {
+        return;
+      }
+
+      setEdges((currentEdges) =>
+        addEdge(
+          {
+            ...connection,
+            id: `edge-${connection.source}-${connection.target}-${Date.now()}`,
+            animated: true,
+            style: {
+              stroke: "#8b5cf6",
+              strokeWidth: 2,
+            },
+          },
+          currentEdges
+        )
+      );
+    },
+    [isValidConnection, setEdges]
+  );
 
   const handleDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -191,8 +258,22 @@ function CanvasInner() {
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onConnect={handleConnect}
+        isValidConnection={isValidConnection}
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
+        connectionLineStyle={{
+          stroke: "#8b5cf6",
+          strokeWidth: 2,
+        }}
+        defaultEdgeOptions={{
+          animated: true,
+          style: {
+            stroke: "#8b5cf6",
+            strokeWidth: 2,
+          },
+        }}
+        deleteKeyCode={["Backspace", "Delete"]}
         fitView
         fitViewOptions={{ padding: 0.35 }}
         proOptions={{ hideAttribution: true }}
