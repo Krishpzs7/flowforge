@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   Background,
   Controls,
@@ -8,12 +8,14 @@ import {
   ReactFlow,
   useEdgesState,
   useNodesState,
+  useReactFlow,
+  ReactFlowProvider,
   type Edge,
   type Node,
   type NodeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useWorkflowStore } from "@/lib/workflow-store";
+import { useWorkflowStore, generateNodeId } from "@/lib/workflow-store";
 
 const initialNodes: Node[] = [
   {
@@ -39,7 +41,10 @@ const initialEdges: Edge[] = [
   },
 ];
 
-export default function WorkflowCanvas() {
+function CanvasInner() {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const { screenToFlowPosition } = useReactFlow();
+
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
@@ -65,8 +70,48 @@ export default function WorkflowCanvas() {
     setSelectedNodeId(null);
   };
 
+  const handleDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const nodeType = event.dataTransfer.getData(
+        "application/flowforge-node-type"
+      );
+      const nodeName = event.dataTransfer.getData(
+        "application/flowforge-node-name"
+      );
+
+      if (!nodeType || !nodeName) return;
+
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      const newNode: Node = {
+        id: generateNodeId(nodeType),
+        type: "default",
+        position,
+        data: { label: nodeName, nodeType },
+      };
+
+      setNodes((current) => [...current, newNode]);
+    },
+    [screenToFlowPosition, setNodes]
+  );
+
   return (
-    <section className="relative min-h-0 flex-1 bg-background">
+    <section
+      ref={wrapperRef}
+      className="relative min-h-0 flex-1 bg-background"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -95,5 +140,13 @@ export default function WorkflowCanvas() {
         </p>
       </div>
     </section>
+  );
+}
+
+export default function WorkflowCanvas() {
+  return (
+    <ReactFlowProvider>
+      <CanvasInner />
+    </ReactFlowProvider>
   );
 }

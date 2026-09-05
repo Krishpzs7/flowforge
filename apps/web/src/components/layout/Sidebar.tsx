@@ -6,27 +6,37 @@ import { Separator } from "@/components/ui/separator";
 const nodeGroups = [
   {
     title: "Triggers",
-    nodes: [{ name: "Webhook", icon: "◉", color: "text-emerald-500" }],
+    nodes: [{ name: "Webhook", type: "webhook", icon: "◉", color: "text-emerald-500" }],
   },
   {
     title: "Logic",
     nodes: [
-      { name: "Condition", icon: "◇", color: "text-amber-500" },
-      { name: "Transform", icon: "✦", color: "text-sky-500" },
-      { name: "Delay", icon: "◷", color: "text-orange-500" },
+      { name: "Condition", type: "condition", icon: "◇", color: "text-amber-500" },
+      { name: "Transform", type: "transform", icon: "✦", color: "text-sky-500" },
+      { name: "Delay", type: "delay", icon: "◷", color: "text-orange-500" },
     ],
   },
   {
     title: "Actions",
     nodes: [
-      { name: "HTTP Request", icon: "↗", color: "text-blue-500" },
-      { name: "Database", icon: "▤", color: "text-violet-500" },
-      { name: "Notification", icon: "◌", color: "text-pink-500" },
+      { name: "HTTP Request", type: "http", icon: "↗", color: "text-blue-500" },
+      { name: "Database", type: "database", icon: "▤", color: "text-violet-500" },
+      { name: "Notification", type: "notification", icon: "◌", color: "text-pink-500" },
     ],
   },
 ];
 
 export default function Sidebar() {
+  const handleDragStart = (
+    event: React.DragEvent<HTMLButtonElement>,
+    nodeType: string,
+    nodeName: string
+  ) => {
+    event.dataTransfer.setData("application/flowforge-node-type", nodeType);
+    event.dataTransfer.setData("application/flowforge-node-name", nodeName);
+    event.dataTransfer.effectAllowed = "move";
+  };
+
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-muted/20">
       <div className="p-4">
@@ -53,6 +63,10 @@ export default function Sidebar() {
                   <button
                     key={node.name}
                     type="button"
+                    draggable
+                    onDragStart={(event) =>
+                      handleDragStart(event, node.type, node.name)
+                    }
                     className="flex w-full cursor-grab items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-left text-sm transition-colors hover:border-border hover:bg-background active:cursor-grabbing"
                   >
                     <span className={`text-base ${node.color}`}>
