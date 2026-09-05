@@ -10,6 +10,7 @@ type WorkflowStore = {
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   setSelectedNodeId: (nodeId: string | null) => void;
+  addNode: (node: Node) => void;
   updateNodeData: (nodeId: string, updates: NodeDataUpdate) => void;
 };
 
@@ -25,6 +26,11 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
   setEdges: (edges) => set({ edges }),
 
   setSelectedNodeId: (selectedNodeId) => set({ selectedNodeId }),
+
+  addNode: (node) =>
+    set((state) => ({
+      nodes: [...state.nodes, node],
+    })),
 
   updateNodeData: (nodeId, updates) =>
     set((state) => ({
