@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import type { Edge, Node } from "@xyflow/react";
 
+type NodeDataUpdate = Record<string, unknown>;
+
 type WorkflowStore = {
   nodes: Node[];
   edges: Edge[];
@@ -8,7 +10,7 @@ type WorkflowStore = {
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   setSelectedNodeId: (nodeId: string | null) => void;
-  addNode: (node: Node) => void;
+  updateNodeData: (nodeId: string, updates: NodeDataUpdate) => void;
 };
 
 let nodeCounter = 0;
@@ -17,11 +19,27 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
+
   setNodes: (nodes) => set({ nodes }),
+
   setEdges: (edges) => set({ edges }),
+
   setSelectedNodeId: (selectedNodeId) => set({ selectedNodeId }),
-  addNode: (node) =>
-    set((state) => ({ nodes: [...state.nodes, node] })),
+
+  updateNodeData: (nodeId, updates) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                ...updates,
+              },
+            }
+          : node
+      ),
+    })),
 }));
 
 export function generateNodeId(prefix: string) {

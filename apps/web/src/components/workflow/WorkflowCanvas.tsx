@@ -1,20 +1,21 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
-
+import { useCallback, useEffect, useRef } from "react";
 import {
   addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
   Background,
   Controls,
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
-  useEdgesState,
-  useNodesState,
   useReactFlow,
   type Connection,
   type Edge,
+  type EdgeChange,
   type Node,
+  type NodeChange,
   type NodeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -111,23 +112,39 @@ const initialEdges: Edge[] = [
 
 function CanvasInner() {
   const { screenToFlowPosition } = useReactFlow();
+  const hasInitialized = useRef(false);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-  const setStoreNodes = useWorkflowStore((state) => state.setNodes);
-  const setStoreEdges = useWorkflowStore((state) => state.setEdges);
+  const nodes = useWorkflowStore((state) => state.nodes);
+  const edges = useWorkflowStore((state) => state.edges);
+  const setNodes = useWorkflowStore((state) => state.setNodes);
+  const setEdges = useWorkflowStore((state) => state.setEdges);
   const setSelectedNodeId = useWorkflowStore(
     (state) => state.setSelectedNodeId
   );
 
   useEffect(() => {
-    setStoreNodes(nodes);
-  }, [nodes, setStoreNodes]);
+    if (hasInitialized.current) {
+      return;
+    }
 
-  useEffect(() => {
-    setStoreEdges(edges);
-  }, [edges, setStoreEdges]);
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+    hasInitialized.current = true;
+  }, [setEdges, setNodes]);
+
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      setNodes(applyNodeChanges(changes, nodes));
+    },
+    [nodes, setNodes]
+  );
+
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      setEdges(applyEdgeChanges(changes, edges));
+    },
+    [edges, setEdges]
+  );
 
   const handleNodeClick: NodeMouseHandler = (_event, node) => {
     setSelectedNodeId(node.id);
@@ -137,10 +154,8 @@ function CanvasInner() {
     setSelectedNodeId(null);
   };
 
-  const isValidConnection = useCallback<
-  (connection: Connection | Edge) => boolean
->(
-    (connection) => {
+  const isValidConnection = useCallback(
+    (connection: Connection | Edge) => {
       if (!connection.source || !connection.target) {
         return false;
       }
@@ -180,7 +195,7 @@ function CanvasInner() {
         return;
       }
 
-      setEdges((currentEdges) =>
+      setEdges(
         addEdge(
           {
             ...connection,
@@ -191,11 +206,11 @@ function CanvasInner() {
               strokeWidth: 2,
             },
           },
-          currentEdges
+          edges
         )
       );
     },
-    [isValidConnection, setEdges]
+    [edges, isValidConnection, setEdges]
   );
 
   const handleDragOver = useCallback((event: React.DragEvent) => {
@@ -241,9 +256,10 @@ function CanvasInner() {
         },
       };
 
-      setNodes((currentNodes) => [...currentNodes, newNode]);
+      setNodes([...nodes, newNode]);
+      setSelectedNodeId(newNode.id);
     },
-    [screenToFlowPosition, setNodes]
+    [nodes, screenToFlowPosition, setNodes, setSelectedNodeId]
   );
 
   return (
@@ -256,8 +272,8 @@ function CanvasInner() {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         isValidConnection={isValidConnection}
         onNodeClick={handleNodeClick}
