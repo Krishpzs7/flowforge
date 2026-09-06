@@ -20,9 +20,11 @@ export default function Topbar() {
     (state) => state.currentWorkflowId,
   );
   const saveStatus = useWorkflowStore((state) => state.saveStatus);
+  const lastSavedAt = useWorkflowStore((state) => state.lastSavedAt);
   const setCurrentWorkflowId = useWorkflowStore(
     (state) => state.setCurrentWorkflowId,
   );
+  const setLastSavedAt = useWorkflowStore((state) => state.setLastSavedAt);
   const setSaveStatus = useWorkflowStore((state) => state.setSaveStatus);
   const toPayload = useWorkflowStore((state) => state.toPayload);
   const resetDemo = useWorkflowStore((state) => state.resetDemo);
@@ -36,6 +38,7 @@ export default function Topbar() {
 
     try {
       const definition = toPayload() as WorkflowDefinition;
+
       const workflow = currentWorkflowId
         ? await updateWorkflow(currentWorkflowId, {
             name: workflowName,
@@ -46,7 +49,9 @@ export default function Topbar() {
             definition,
           });
 
+      // Keep server identity and timestamp in sync after either POST or PUT.
       setCurrentWorkflowId(workflow.id);
+      setLastSavedAt(workflow.updatedAt);
       setSaveStatus("saved");
     } catch (error) {
       console.error("Failed to save workflow", error);
@@ -56,6 +61,7 @@ export default function Topbar() {
     currentWorkflowId,
     saveStatus,
     setCurrentWorkflowId,
+    setLastSavedAt,
     setSaveStatus,
     toPayload,
   ]);
@@ -77,6 +83,13 @@ export default function Topbar() {
     error: "Save failed",
   }[saveStatus];
 
+  const savedTimeLabel = lastSavedAt
+    ? new Intl.DateTimeFormat([], {
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(new Date(lastSavedAt))
+    : null;
+
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-muted/20 px-4">
       <div className="flex items-center gap-3">
@@ -94,11 +107,13 @@ export default function Topbar() {
           connection{edges.length === 1 ? "" : "s"}
         </p>
 
-        {currentWorkflowId ? (
-          <p className="hidden text-[11px] text-muted-foreground lg:block">
-            ID: {currentWorkflowId.slice(0, 8)}
-          </p>
-        ) : null}
+        <div className="hidden items-center gap-2 text-[11px] text-muted-foreground lg:flex">
+          {currentWorkflowId ? (
+            <span>ID: {currentWorkflowId.slice(0, 8)}</span>
+          ) : null}
+
+          {savedTimeLabel ? <span>Saved at {savedTimeLabel}</span> : null}
+        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -107,12 +122,12 @@ export default function Topbar() {
         </Button>
 
         <Button
-  size="sm"
-  onClick={handleSave}
-  isDisabled={saveStatus === "saving"}
->
-  {saveButtonLabel}
-</Button>
+          size="sm"
+          onClick={handleSave}
+          isDisabled={saveStatus === "saving"}
+        >
+          {saveButtonLabel}
+        </Button>
       </div>
     </header>
   );

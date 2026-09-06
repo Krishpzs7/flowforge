@@ -21,6 +21,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import CustomNode from "@/components/workflow/nodes/CustomNode";
+import { getWorkflow } from "@/lib/api";
 import { generateNodeId, useWorkflowStore } from "@/lib/workflow-store";
 
 const nodeTypes = {
@@ -116,51 +117,80 @@ function CanvasInner() {
 
   const nodes = useWorkflowStore((state) => state.nodes);
   const edges = useWorkflowStore((state) => state.edges);
+  const isLoadingWorkflow = useWorkflowStore(
+    (state) => state.isLoadingWorkflow,
+  );
   const setNodes = useWorkflowStore((state) => state.setNodes);
   const setEdges = useWorkflowStore((state) => state.setEdges);
   const setSelectedNodeId = useWorkflowStore(
-    (state) => state.setSelectedNodeId
+    (state) => state.setSelectedNodeId,
   );
+  const setIsLoadingWorkflow = useWorkflowStore(
+    (state) => state.setIsLoadingWorkflow,
+  );
+  const hydrateFromServer = useWorkflowStore((state) => state.hydrateFromServer);
   const saveToLocalStorage = useWorkflowStore(
-    (state) => state.saveToLocalStorage
+    (state) => state.saveToLocalStorage,
   );
 
-  // Initialize from localStorage on first mount.
   useEffect(() => {
     if (hasInitialized.current) {
       return;
     }
 
-    const restored = useWorkflowStore.getState().loadFromLocalStorage();
-    if (!restored) {
-      setNodes(initialNodes);
-      setEdges(initialEdges);
-    }
-
     hasInitialized.current = true;
-  }, [setEdges, setNodes]);
 
-  // Auto-save whenever the workflow graph changes.
+    const initializeWorkflow = async () => {
+      const restoredLocalWorkflow = useWorkflowStore
+        .getState()
+        .loadFromLocalStorage();
+
+      const workflowId = useWorkflowStore.getState().currentWorkflowId;
+
+      if (workflowId) {
+        try {
+          const workflow = await getWorkflow(workflowId);
+          hydrateFromServer(workflow);
+          setIsLoadingWorkflow(false);
+          return;
+        } catch (error) {
+          // Keep the locally cached graph when the API is unavailable or the saved record is gone.
+          console.warn("Could not load workflow from API; using local copy.", error);
+        }
+      }
+
+      if (!restoredLocalWorkflow) {
+        setNodes(initialNodes);
+        setEdges(initialEdges);
+      }
+
+      setIsLoadingWorkflow(false);
+    };
+
+    void initializeWorkflow();
+  }, [hydrateFromServer, setEdges, setIsLoadingWorkflow, setNodes]);
+
   useEffect(() => {
-    if (!hasInitialized.current) {
+    if (!hasInitialized.current || isLoadingWorkflow) {
       return;
     }
 
+    // Persist graph edits locally so the editor remains usable during API outages.
     saveToLocalStorage();
-  }, [nodes, edges, saveToLocalStorage]);
+  }, [edges, isLoadingWorkflow, nodes, saveToLocalStorage]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
       setNodes(applyNodeChanges(changes, nodes));
     },
-    [nodes, setNodes]
+    [nodes, setNodes],
   );
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       setEdges(applyEdgeChanges(changes, edges));
     },
-    [edges, setEdges]
+    [edges, setEdges],
   );
 
   const handleNodeClick: NodeMouseHandler = (_event, node) => {
@@ -187,10 +217,12 @@ function CanvasInner() {
       const sourceNodeType = String(sourceNode?.data.nodeType ?? "");
       const targetNodeType = String(targetNode?.data.nodeType ?? "");
 
+      // Trigger nodes begin workflows and cannot receive inbound edges.
       if (targetNodeType === "webhook") {
         return false;
       }
 
+      // Notification nodes end a workflow branch in the initial execution model.
       if (sourceNodeType === "notification") {
         return false;
       }
@@ -198,12 +230,12 @@ function CanvasInner() {
       const alreadyConnected = edges.some(
         (edge) =>
           edge.source === connection.source &&
-          edge.target === connection.target
+          edge.target === connection.target,
       );
 
       return !alreadyConnected;
     },
-    [edges, nodes]
+    [edges, nodes],
   );
 
   const handleConnect = useCallback(
@@ -223,11 +255,11 @@ function CanvasInner() {
               strokeWidth: 2,
             },
           },
-          edges
-        )
+          edges,
+        ),
       );
     },
-    [edges, isValidConnection, setEdges]
+    [edges, isValidConnection, setEdges],
   );
 
   const handleDragOver = useCallback((event: React.DragEvent) => {
@@ -240,16 +272,17 @@ function CanvasInner() {
       event.preventDefault();
 
       const nodeType = event.dataTransfer.getData(
-        "application/flowforge-node-type"
+        "application/flowforge-node-type",
       );
       const nodeName = event.dataTransfer.getData(
-        "application/flowforge-node-name"
+        "application/flowforge-node-name",
       );
 
       if (!nodeType || !nodeName) {
         return;
       }
 
+      // Flow coordinates account for the current canvas pan and zoom level.
       const position = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
@@ -273,12 +306,19 @@ function CanvasInner() {
         },
       };
 
-      // Keep node creation in the shared store for future undo/redo support.
       useWorkflowStore.getState().addNode(newNode);
       setSelectedNodeId(newNode.id);
     },
-    [screenToFlowPosition, setSelectedNodeId]
+    [screenToFlowPosition, setSelectedNodeId],
   );
+
+  if (isLoadingWorkflow) {
+    return (
+      <section className="flex min-h-0 flex-1 items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Loading workflow…</p>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -314,7 +354,6 @@ function CanvasInner() {
       >
         <Background gap={20} size={1} />
         <Controls showInteractive={false} />
-
         <MiniMap
           className="!bottom-4 !right-4 !rounded-lg !border !border-border !bg-background"
           nodeColor="#8b5cf6"
@@ -324,7 +363,6 @@ function CanvasInner() {
 
       <div className="pointer-events-none absolute left-4 top-4 rounded-lg border border-border bg-background/90 px-3 py-2 shadow-sm backdrop-blur">
         <p className="text-xs font-medium">Workflow canvas</p>
-
         <p className="mt-0.5 text-[11px] text-muted-foreground">
           {nodes.length} nodes · {edges.length} connection
           {edges.length === 1 ? "" : "s"}

@@ -15,16 +15,25 @@ type WorkflowStore = {
   edges: Edge[];
   selectedNodeId: string | null;
   currentWorkflowId: string | null;
+  lastSavedAt: string | null;
+  isLoadingWorkflow: boolean;
   saveStatus: SaveStatus;
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   setSelectedNodeId: (nodeId: string | null) => void;
   setCurrentWorkflowId: (workflowId: string | null) => void;
+  setLastSavedAt: (timestamp: string | null) => void;
+  setIsLoadingWorkflow: (isLoading: boolean) => void;
   setSaveStatus: (status: SaveStatus) => void;
   addNode: (node: Node) => void;
   updateNodeData: (nodeId: string, updates: NodeDataUpdate) => void;
   saveToLocalStorage: () => void;
   loadFromLocalStorage: () => boolean;
+  hydrateFromServer: (workflow: {
+    id: string;
+    definition: WorkflowPayload;
+    updatedAt: string;
+  }) => void;
   resetDemo: () => void;
   toPayload: () => WorkflowPayload;
 };
@@ -89,6 +98,8 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   edges: [],
   selectedNodeId: null,
   currentWorkflowId: null,
+  lastSavedAt: null,
+  isLoadingWorkflow: true,
   saveStatus: "idle",
 
   setNodes: (nodes) => set({ nodes, saveStatus: "idle" }),
@@ -106,6 +117,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 
     set({ currentWorkflowId });
   },
+
+  setLastSavedAt: (lastSavedAt) => set({ lastSavedAt }),
+
+  setIsLoadingWorkflow: (isLoadingWorkflow) => set({ isLoadingWorkflow }),
 
   setSaveStatus: (saveStatus) => set({ saveStatus }),
 
@@ -158,6 +173,20 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     }
   },
 
+  hydrateFromServer: (workflow) => {
+    // Server data wins after a successful fetch; local storage remains an offline fallback.
+    set({
+      nodes: workflow.definition.nodes,
+      edges: workflow.definition.edges,
+      currentWorkflowId: workflow.id,
+      lastSavedAt: workflow.updatedAt,
+      saveStatus: "saved",
+    });
+
+    localStorage.setItem(WORKFLOW_ID_STORAGE_KEY, workflow.id);
+    get().saveToLocalStorage();
+  },
+
   resetDemo: () => {
     nodeCounter = 0;
     localStorage.removeItem(WORKFLOW_ID_STORAGE_KEY);
@@ -167,6 +196,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       edges: demoEdges,
       selectedNodeId: null,
       currentWorkflowId: null,
+      lastSavedAt: null,
       saveStatus: "idle",
     });
 

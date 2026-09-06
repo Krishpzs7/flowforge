@@ -20,7 +20,7 @@ type SaveWorkflowInput = {
   definition: WorkflowDefinition;
 };
 
-// The API returns the complete record so the client can retain the workflow ID.
+// The API returns the complete record so the client can retain server timestamps.
 async function parseWorkflowResponse(response: Response): Promise<ApiWorkflow> {
   if (!response.ok) {
     const message = await response.text();
@@ -28,6 +28,11 @@ async function parseWorkflowResponse(response: Response): Promise<ApiWorkflow> {
   }
 
   return response.json() as Promise<ApiWorkflow>;
+}
+
+export async function getWorkflow(workflowId: string): Promise<ApiWorkflow> {
+  const response = await fetch(`${API_URL}/workflows/${workflowId}`);
+  return parseWorkflowResponse(response);
 }
 
 export async function createWorkflow(
