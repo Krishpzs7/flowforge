@@ -3,23 +3,36 @@ import type { Edge, Node } from "@xyflow/react";
 
 type NodeDataUpdate = Record<string, unknown>;
 
+type WorkflowPayload = {
+  nodes: Node[];
+  edges: Edge[];
+};
+
+export type SaveStatus = "idle" | "saving" | "saved" | "error";
+
 type WorkflowStore = {
   nodes: Node[];
   edges: Edge[];
   selectedNodeId: string | null;
+  currentWorkflowId: string | null;
+  saveStatus: SaveStatus;
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   setSelectedNodeId: (nodeId: string | null) => void;
+  setCurrentWorkflowId: (workflowId: string | null) => void;
+  setSaveStatus: (status: SaveStatus) => void;
   addNode: (node: Node) => void;
   updateNodeData: (nodeId: string, updates: NodeDataUpdate) => void;
   saveToLocalStorage: () => void;
   loadFromLocalStorage: () => boolean;
   resetDemo: () => void;
+  toPayload: () => WorkflowPayload;
 };
 
 let nodeCounter = 0;
 
 const STORAGE_KEY = "flowforge-workflow-v1";
+const WORKFLOW_ID_STORAGE_KEY = "flowforge-workflow-id-v1";
 
 // Initial demo workflow used for new users and Reset demo.
 const demoNodes: Node[] = [
@@ -75,16 +88,31 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
+  currentWorkflowId: null,
+  saveStatus: "idle",
 
-  setNodes: (nodes) => set({ nodes }),
+  setNodes: (nodes) => set({ nodes, saveStatus: "idle" }),
 
-  setEdges: (edges) => set({ edges }),
+  setEdges: (edges) => set({ edges, saveStatus: "idle" }),
 
   setSelectedNodeId: (selectedNodeId) => set({ selectedNodeId }),
+
+  setCurrentWorkflowId: (currentWorkflowId) => {
+    if (currentWorkflowId) {
+      localStorage.setItem(WORKFLOW_ID_STORAGE_KEY, currentWorkflowId);
+    } else {
+      localStorage.removeItem(WORKFLOW_ID_STORAGE_KEY);
+    }
+
+    set({ currentWorkflowId });
+  },
+
+  setSaveStatus: (saveStatus) => set({ saveStatus }),
 
   addNode: (node) =>
     set((state) => ({
       nodes: [...state.nodes, node],
+      saveStatus: "idle",
     })),
 
   updateNodeData: (nodeId, updates) =>
@@ -98,25 +126,32 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
                 ...updates,
               },
             }
-          : node
+          : node,
       ),
+      saveStatus: "idle",
     })),
 
   saveToLocalStorage: () => {
     const { nodes, edges } = get();
-    const payload = JSON.stringify({ nodes, edges });
-    localStorage.setItem(STORAGE_KEY, payload);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes, edges }));
   },
 
   loadFromLocalStorage: () => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
+    const rawWorkflow = localStorage.getItem(STORAGE_KEY);
+    const storedWorkflowId = localStorage.getItem(WORKFLOW_ID_STORAGE_KEY);
+
+    if (!rawWorkflow) {
       return false;
     }
 
     try {
-      const parsed = JSON.parse(raw) as { nodes: Node[]; edges: Edge[] };
-      set({ nodes: parsed.nodes, edges: parsed.edges });
+      const parsed = JSON.parse(rawWorkflow) as WorkflowPayload;
+      set({
+        nodes: parsed.nodes,
+        edges: parsed.edges,
+        currentWorkflowId: storedWorkflowId,
+        saveStatus: storedWorkflowId ? "saved" : "idle",
+      });
       return true;
     } catch {
       return false;
@@ -125,8 +160,22 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 
   resetDemo: () => {
     nodeCounter = 0;
-    set({ nodes: demoNodes, edges: demoEdges, selectedNodeId: null });
+    localStorage.removeItem(WORKFLOW_ID_STORAGE_KEY);
+
+    set({
+      nodes: demoNodes,
+      edges: demoEdges,
+      selectedNodeId: null,
+      currentWorkflowId: null,
+      saveStatus: "idle",
+    });
+
     get().saveToLocalStorage();
+  },
+
+  toPayload: () => {
+    const { nodes, edges } = get();
+    return { nodes, edges };
   },
 }));
 
