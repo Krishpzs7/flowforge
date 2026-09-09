@@ -1,3 +1,5 @@
+"use client";
+
 import ExecutionPanel from "@/components/layout/ExecutionPanel";
 import PropertiesPanel from "@/components/layout/PropertiesPanel";
 import Sidebar from "@/components/layout/Sidebar";
@@ -6,10 +8,10 @@ import WorkflowCanvas from "@/components/workflow/WorkflowCanvas";
 
 export default function EditorPage() {
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    <div className="flex h-full flex-col">
       <Topbar />
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1">
         <Sidebar />
 
         <div className="flex min-w-0 flex-1 flex-col">

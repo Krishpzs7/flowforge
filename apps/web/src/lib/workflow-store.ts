@@ -10,6 +10,21 @@ type WorkflowPayload = {
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
+export type RunStatus =
+  | "idle"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "error";
+
+export type ExecutionLogEntry = {
+  id: string;
+  message: string;
+  timestamp: string;
+  tone: "neutral" | "info" | "success" | "error";
+};
+
 type WorkflowStore = {
   nodes: Node[];
   edges: Edge[];
@@ -18,6 +33,9 @@ type WorkflowStore = {
   lastSavedAt: string | null;
   isLoadingWorkflow: boolean;
   saveStatus: SaveStatus;
+  activeRunId: string | null;
+  runStatus: RunStatus;
+  executionLogs: ExecutionLogEntry[];
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   setSelectedNodeId: (nodeId: string | null) => void;
@@ -25,6 +43,13 @@ type WorkflowStore = {
   setLastSavedAt: (timestamp: string | null) => void;
   setIsLoadingWorkflow: (isLoading: boolean) => void;
   setSaveStatus: (status: SaveStatus) => void;
+  setActiveRunId: (runId: string | null) => void;
+  setRunStatus: (status: RunStatus) => void;
+  addExecutionLog: (
+    message: string,
+    tone?: ExecutionLogEntry["tone"],
+  ) => void;
+  clearExecutionLogs: () => void;
   addNode: (node: Node) => void;
   updateNodeData: (nodeId: string, updates: NodeDataUpdate) => void;
   saveToLocalStorage: () => void;
@@ -39,6 +64,7 @@ type WorkflowStore = {
 };
 
 let nodeCounter = 0;
+let logCounter = 0;
 
 const STORAGE_KEY = "flowforge-workflow-v1";
 const WORKFLOW_ID_STORAGE_KEY = "flowforge-workflow-id-v1";
@@ -101,6 +127,9 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   lastSavedAt: null,
   isLoadingWorkflow: true,
   saveStatus: "idle",
+  activeRunId: null,
+  runStatus: "idle",
+  executionLogs: [],
 
   setNodes: (nodes) => set({ nodes, saveStatus: "idle" }),
 
@@ -123,6 +152,29 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   setIsLoadingWorkflow: (isLoadingWorkflow) => set({ isLoadingWorkflow }),
 
   setSaveStatus: (saveStatus) => set({ saveStatus }),
+
+  setActiveRunId: (activeRunId) => set({ activeRunId }),
+
+  setRunStatus: (runStatus) => set({ runStatus }),
+
+  addExecutionLog: (message, tone = "neutral") =>
+    set((state) => {
+      logCounter += 1;
+
+      return {
+        executionLogs: [
+          ...state.executionLogs,
+          {
+            id: `log-${Date.now()}-${logCounter}`,
+            message,
+            timestamp: new Date().toISOString(),
+            tone,
+          },
+        ],
+      };
+    }),
+
+  clearExecutionLogs: () => set({ executionLogs: [] }),
 
   addNode: (node) =>
     set((state) => ({
@@ -198,6 +250,9 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       currentWorkflowId: null,
       lastSavedAt: null,
       saveStatus: "idle",
+      activeRunId: null,
+      runStatus: "idle",
+      executionLogs: [],
     });
 
     get().saveToLocalStorage();
