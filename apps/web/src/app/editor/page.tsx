@@ -2,6 +2,7 @@
 
 import ExecutionPanel from "@/components/layout/ExecutionPanel";
 import PropertiesPanel from "@/components/layout/PropertiesPanel";
+import RunHistoryPanel from "@/components/layout/RunHistoryPanel";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import WorkflowCanvas from "@/components/workflow/WorkflowCanvas";
@@ -17,6 +18,7 @@ export default function EditorPage() {
         <div className="flex min-w-0 flex-1 flex-col">
           <WorkflowCanvas />
           <ExecutionPanel />
+          <RunHistoryPanel />
         </div>
 
         <PropertiesPanel />
