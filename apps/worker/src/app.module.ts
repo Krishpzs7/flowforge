@@ -1,31 +1,22 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { Workflow } from './entities/workflow.entity';
-import { WorkflowRun } from './entities/workflow-run.entity';
+import { ConfigModule } from '@nestjs/config';
+import { resolve } from 'node:path';
+import { WorkflowExecutionService } from './workflow-execution.service';
 import { WorkerService } from './worker.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+
+      // Resolve from apps/worker back to the monorepo root:
+      // C:\dev\flowforge\apps\worker -> C:\dev\flowforge\.env
+      envFilePath: resolve(process.cwd(), '../../.env'),
     }),
-    TypeOrmModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres' as const,
-        host: config.getOrThrow<string>('DATABASE_HOST'),
-        port: config.getOrThrow<number>('DATABASE_PORT'),
-        username: config.getOrThrow<string>('DATABASE_USER'),
-        password: config.getOrThrow<string>('DATABASE_PASSWORD'),
-        database: config.getOrThrow<string>('DATABASE_NAME'),
-        autoLoadEntities: true,
-        synchronize: false,
-      }),
-    }),
-    TypeOrmModule.forFeature([Workflow, WorkflowRun]),
   ],
-  providers: [WorkerService],
+  providers: [
+    WorkerService,
+    WorkflowExecutionService,
+  ],
 })
 export class AppModule {}

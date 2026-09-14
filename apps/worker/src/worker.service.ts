@@ -4,135 +4,182 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
-import { WorkflowRun } from './entities/workflow-run.entity';
+import { ConfigService } from '@nestjs/config';
+import { Pool, PoolClient } from 'pg';
+import {
+  ExecutionResult,
+  WorkflowExecutionService,
+} from './workflow-execution.service';
+
+interface QueuedRunRow {
+  id: string;
+  workflow_id: string;
+  input: unknown;
+  definition: unknown;
+}
 
 @Injectable()
-export class WorkerService implements OnModuleInit, OnModuleDestroy {
+export class WorkerService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(WorkerService.name);
-  private pollTimer: NodeJS.Timeout | undefined;
-  private isPolling = false;
+  private pool!: Pool;
+  private polling = true;
 
   constructor(
-    private readonly dataSource: DataSource,
-    @InjectRepository(WorkflowRun)
-    private readonly workflowRunsRepository: Repository<WorkflowRun>,
+    private readonly configService: ConfigService,
+    private readonly executionService: WorkflowExecutionService,
   ) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
+    const databaseUrl =
+      this.configService.get<string>('DATABASE_URL');
+
+    if (!databaseUrl) {
+      throw new Error('DATABASE_URL is not set');
+    }
+
+    this.pool = new Pool({
+      connectionString: databaseUrl,
+    });
+
     this.logger.log('FlowForge worker started');
 
-    void this.pollForRuns();
-
-    this.pollTimer = setInterval(() => {
-      void this.pollForRuns();
-    }, 1_000);
+    // Run the polling loop in the background so Nest can finish startup.
+    void this.pollAndProcessRuns();
   }
 
-  onModuleDestroy(): void {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-    }
+  async onModuleDestroy(): Promise<void> {
+    this.polling = false;
 
-    this.logger.log('FlowForge worker stopped');
+    if (this.pool) {
+      await this.pool.end();
+    }
   }
 
-  private async pollForRuns(): Promise<void> {
-    if (this.isPolling) {
-      return;
-    }
+  private async pollAndProcessRuns(): Promise<void> {
+    while (this.polling) {
+      try {
+        const run = await this.claimNextRun();
 
-    this.isPolling = true;
+        if (!run) {
+          await this.sleep(1000);
+          continue;
+        }
+
+        await this.processRun(run);
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+
+        this.logger.error(`Worker error: ${message}`);
+        await this.sleep(1000);
+      }
+    }
+  }
+
+  private async claimNextRun(): Promise<QueuedRunRow | null> {
+    const client = await this.pool.connect();
 
     try {
-      const run = await this.claimNextQueuedRun();
+      await client.query('BEGIN');
 
-      if (run) {
-        await this.executeRun(run);
-      }
-    } catch (error) {
-      this.logger.error(
-        'Worker poll failed',
-        error instanceof Error ? error.stack : String(error),
-      );
-    } finally {
-      this.isPolling = false;
-    }
-  }
+      const result = await client.query<QueuedRunRow>(`
+        SELECT
+          runs.id,
+          runs.workflow_id,
+          runs.input,
+          workflows.definition
+        FROM workflow_runs runs
+        INNER JOIN workflows
+          ON workflows.id = runs.workflow_id
+        WHERE runs.status = 'queued'
+        ORDER BY runs.created_at ASC
+        LIMIT 1
+        FOR UPDATE OF runs SKIP LOCKED
+      `);
 
-  private async claimNextQueuedRun(): Promise<WorkflowRun | null> {
-    return this.dataSource.transaction(async (manager) => {
-      const repository = manager.getRepository(WorkflowRun);
-
-      const run = await repository
-        .createQueryBuilder('workflowRun')
-        .setLock('pessimistic_write')
-        .setOnLocked('skip_locked')
-        .where('workflowRun.status = :status', { status: 'queued' })
-        .orderBy('workflowRun.createdAt', 'ASC')
-        .getOne();
+      const run = result.rows[0];
 
       if (!run) {
+        await client.query('ROLLBACK');
         return null;
       }
 
-      run.status = 'running';
-      run.startedAt = new Date();
-
-      const savedRun = await repository.save(run);
-
-      this.logger.log(
-        `Claimed workflow run ${savedRun.id} for workflow ${savedRun.workflowId}`,
+      await client.query(
+        `
+          UPDATE workflow_runs
+          SET status = 'running',
+              started_at = COALESCE(started_at, NOW())
+          WHERE id = $1
+        `,
+        [run.id],
       );
 
-      return savedRun;
-    });
-  }
+      await client.query('COMMIT');
 
-  private async executeRun(run: WorkflowRun): Promise<void> {
-    try {
-      this.logger.log(`Executing workflow run ${run.id}`);
-
-      await this.sleep(1_000);
-
-      run.status = 'succeeded';
-      run.output = {
-        message: 'Workflow completed in worker simulation mode',
-        workflowId: run.workflowId,
-        receivedInput: run.input,
-      };
-      run.error = null;
-      run.finishedAt = new Date();
-
-      await this.workflowRunsRepository.save(run);
-
-      this.logger.log(`Workflow run ${run.id} succeeded`);
+      return run;
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown worker error';
-
-      this.logger.error(
-        `Workflow run ${run.id} failed`,
-        error instanceof Error ? error.stack : String(error),
-      );
-
-      await this.workflowRunsRepository.update(
-        {
-          id: run.id,
-          status: 'running',
-        },
-        {
-          status: 'failed',
-          error: errorMessage,
-          finishedAt: new Date(),
-        },
-      );
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
   }
 
-  private sleep(milliseconds: number): Promise<void> {
-    return new Promise((resolve) => {
+  private async processRun(run: QueuedRunRow): Promise<void> {
+    this.logger.log(`Executing workflow run ${run.id}`);
+
+    let result: ExecutionResult;
+
+    try {
+      result = await this.executionService.execute(
+        run.definition,
+        run.input,
+      );
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : String(error);
+
+      result = {
+        status: 'failed',
+        finalData: {},
+        steps: [],
+        error: message,
+      };
+    }
+
+    await this.persistResult(run.id, result);
+
+    this.logger.log(
+      `Workflow run ${run.id} finished with status ${result.status}`,
+    );
+  }
+
+  private async persistResult(
+    runId: string,
+    result: ExecutionResult,
+  ): Promise<void> {
+    await this.pool.query(
+      `
+        UPDATE workflow_runs
+        SET status = $2,
+            output = $3::jsonb,
+            error = $4,
+            finished_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        runId,
+        result.status,
+        JSON.stringify(result),
+        result.error ?? null,
+      ],
+    );
+  }
+
+  private async sleep(milliseconds: number): Promise<void> {
+    await new Promise<void>((resolve) => {
       setTimeout(resolve, milliseconds);
     });
   }
