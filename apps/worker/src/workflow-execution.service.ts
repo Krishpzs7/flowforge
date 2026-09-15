@@ -1,14 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 interface WorkflowNode {
-    id: string;
-    type: string;
-    data?: {
-      nodeType?: string;
-      label?: string;
-      [key: string]: unknown;
-    };
-  }
+  id: string;
+  type: string;
+  data?: {
+    nodeType?: string;
+    label?: string;
+    configuration?: Record<string, unknown>;
+    config?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+}
 
 interface WorkflowEdge {
   id?: string;
@@ -45,8 +47,8 @@ export class WorkflowExecutionService {
   /**
    * Executes one saved workflow definition.
    *
-   * This service does not access PostgreSQL directly. WorkerService owns
-   * database reads/writes and supplies the saved definition plus run input.
+   * Database access belongs to WorkerService. This service receives a workflow
+   * definition and run input, then returns a serializable execution result.
    */
   async execute(
     definition: unknown,
@@ -63,15 +65,13 @@ export class WorkflowExecutionService {
         throw new Error('No start node found in workflow definition');
       }
 
-      // A visited set prevents accidental infinite loops in cyclic graphs.
+      // Prevent accidental infinite execution if a workflow has a cycle.
       const visited = new Set<string>();
-
-      // This becomes null when there is no outgoing edge from the current node.
       let currentNode: WorkflowNode | null = startNode;
 
       while (currentNode !== null) {
-        // currentNode is known to be non-null here. Save it as a local
-        // constant so it remains safely narrowed inside try/catch blocks.
+        // Capture a non-null node reference for the complete iteration.
+        // This also keeps TypeScript happy in the try/catch below.
         const node: WorkflowNode = currentNode;
 
         if (visited.has(node.id)) {
@@ -82,7 +82,7 @@ export class WorkflowExecutionService {
 
         visited.add(node.id);
 
-        // Each step receives a snapshot of data as it existed before the node.
+        // Save a snapshot so history shows exactly what each step received.
         const stepInput = { ...data };
 
         try {
@@ -96,10 +96,10 @@ export class WorkflowExecutionService {
             output,
           });
 
-          // Node output becomes available as input for downstream nodes.
+          // Output fields become available to the next node in the workflow.
           data = { ...data, ...output };
 
-          // A null result is valid: it means node is the end of this path.
+          // A null next node means the workflow has reached its final step.
           currentNode = this.getNextNode(
             node.id,
             normalizedDefinition,
@@ -144,7 +144,7 @@ export class WorkflowExecutionService {
   }
 
   /**
-   * Validates the minimum saved React Flow-style definition shape.
+   * Validates the minimum React Flow-like saved definition structure.
    */
   private normalizeDefinition(value: unknown): WorkflowDefinition {
     if (!value || typeof value !== 'object') {
@@ -168,8 +168,7 @@ export class WorkflowExecutionService {
   }
 
   /**
-   * Only plain object input is carried through a workflow.
-   * Null, arrays, primitives, and omitted input become an empty object.
+   * Workflow data is always a plain object. Other input values become {}.
    */
   private normalizeInput(value: unknown): Record<string, unknown> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -180,9 +179,7 @@ export class WorkflowExecutionService {
   }
 
   /**
-   * A start node has no edge that targets it.
-   * This assumes an initial linear workflow; multi-trigger selection can
-   * be added later when the editor exposes trigger selection.
+   * A start node is not targeted by any edge.
    */
   private findStartNode(
     definition: WorkflowDefinition,
@@ -199,8 +196,10 @@ export class WorkflowExecutionService {
   }
 
   /**
-   * Gets the first outgoing connection for a node.
-   * The initial engine deliberately supports one path at a time.
+   * Returns the first outgoing connection for a node.
+   *
+   * This is linear execution for now. Condition branching will later select
+   * an edge using sourceHandle instead of simply selecting the first edge.
    */
   private getNextNode(
     nodeId: string,
@@ -221,38 +220,48 @@ export class WorkflowExecutionService {
     );
   }
 
+  /**
+   * React Flow renders every card with serialized type "custom".
+   * The executable behavior is stored in data.nodeType, for example:
+   *
+   * { type: "custom", data: { nodeType: "webhook" } }
+   */
   private resolveNodeType(node: WorkflowNode): string {
     const configuredType = node.data?.nodeType;
-  
-    if (typeof configuredType === 'string' && configuredType.length > 0) {
+
+    if (
+      typeof configuredType === 'string' &&
+      configuredType.trim().length > 0
+    ) {
       return configuredType;
     }
-  
+
     return node.type;
   }
 
   /**
- * Executes a node using the behavior type saved by the editor.
- */
-private async executeNode(
+   * Routes a workflow node to its supported execution behavior.
+   */
+  private async executeNode(
     node: WorkflowNode,
     data: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const executableType = this.resolveNodeType(node);
-  
+
     switch (executableType) {
       case 'webhook':
+        // The trigger starts execution with the input that was submitted.
         return { ...data };
-  
+
       case 'transform':
         return this.executeTransformNode(node, data);
-  
+
       case 'condition':
         return this.executeConditionNode(node, data);
-  
+
       case 'delay':
         return this.executeDelayNode(node, data);
-  
+
       default:
         throw new Error(
           `Unsupported node type: ${executableType}`,
@@ -261,66 +270,251 @@ private async executeNode(
   }
 
   /**
-   * Applies ordered set/delete operations from:
+   * Executes the Transform node's saved expression.
    *
-   * data: {
-   *   config: {
-   *     operations: [
-   *       { type: 'set', key: 'approved', value: true },
-   *       { type: 'delete', key: 'temporaryValue' }
-   *     ]
-   *   }
-   * }
+   * Supported safe format:
+   *   {{ ...input, fieldName: value, anotherField: value }}
+   *
+   * The expression is parsed, never executed as JavaScript. This prevents
+   * arbitrary code execution in the worker process.
    */
   private executeTransformNode(
     node: WorkflowNode,
     data: Record<string, unknown>,
   ): Record<string, unknown> {
-    const config = this.nodeConfig(node);
-    const output = { ...data };
+    const configuration = this.nodeConfiguration(node);
+    const expression = configuration.expression;
 
-    const operations = Array.isArray(config.operations)
-      ? config.operations
-      : [];
+    // A missing expression makes Transform a safe pass-through node.
+    if (
+      typeof expression !== 'string' ||
+      expression.trim().length === 0
+    ) {
+      return { ...data };
+    }
 
-    for (const operation of operations) {
-      if (!operation || typeof operation !== 'object') {
-        continue;
-      }
+    return this.parseTransformExpression(expression, data);
+  }
 
-      const item = operation as {
-        type?: string;
-        key?: string;
-        value?: unknown;
-      };
+  /**
+   * Reads the editor's current configuration shape:
+   *   node.data.configuration
+   *
+   * It also accepts node.data.config so older saved workflow definitions
+   * remain compatible.
+   */
+  private nodeConfiguration(
+    node: WorkflowNode,
+  ): Record<string, unknown> {
+    const configuration =
+      node.data?.configuration ?? node.data?.config;
 
-      if (!item.key) {
-        throw new Error('Transform operation requires a key');
-      }
+    if (
+      !configuration ||
+      typeof configuration !== 'object' ||
+      Array.isArray(configuration)
+    ) {
+      return {};
+    }
 
-      if (item.type === 'set') {
-        output[item.key] = item.value;
-        continue;
-      }
+    return configuration as Record<string, unknown>;
+  }
 
-      if (item.type === 'delete') {
-        delete output[item.key];
-        continue;
-      }
+  /**
+   * Parses a deliberately restricted transform expression.
+   *
+   * Supported example:
+   *   {{ ...input, validated: true, priority: "high", retries: 3 }}
+   *
+   * It requires ...input first, then accepts comma-separated key/value
+   * assignments. It does not execute arbitrary JavaScript.
+   */
+  private parseTransformExpression(
+    expression: string,
+    input: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const trimmed = expression.trim();
 
+    if (!trimmed.startsWith('{{') || !trimmed.endsWith('}}')) {
       throw new Error(
-        `Unsupported transform operation: ${item.type ?? 'unknown'}`,
+        'Transform expression must start with "{{" and end with "}}"',
       );
+    }
+
+    const body = trimmed.slice(2, -2).trim();
+
+    if (!body.startsWith('...input')) {
+      throw new Error(
+        'Transform expression must begin with "...input"',
+      );
+    }
+
+    const assignments = body
+      .slice('...input'.length)
+      .trim()
+      .replace(/^,/, '')
+      .trim();
+
+    // {{ ...input }} simply returns a copy of the current workflow data.
+    if (!assignments) {
+      return { ...input };
+    }
+
+    const output = { ...input };
+
+    for (const assignment of this.splitTopLevelAssignments(assignments)) {
+      const separatorIndex = assignment.indexOf(':');
+
+      if (separatorIndex === -1) {
+        throw new Error(
+          `Invalid transform assignment: "${assignment}"`,
+        );
+      }
+
+      const key = assignment.slice(0, separatorIndex).trim();
+      const rawValue = assignment.slice(separatorIndex + 1).trim();
+
+      // Keep initial field names simple and predictable.
+      if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)) {
+        throw new Error(
+          `Invalid transform field name: "${key}"`,
+        );
+      }
+
+      output[key] = this.parseTransformValue(rawValue);
     }
 
     return output;
   }
 
   /**
-   * Evaluates one basic condition and stores the boolean outcome.
+   * Splits assignments only on top-level commas. Commas inside quoted strings,
+   * arrays, and JSON-like objects are preserved as part of their value.
    *
-   * Supported operators are eq, neq, gt, and lt. Branch routing based on
-   * React Flow source handles will be added after this baseline works.
+   * Example:
+   *   active: true, tags: ["vip", "new"], note: "Hello, customer"
+   */
+  private splitTopLevelAssignments(value: string): string[] {
+    const assignments: string[] = [];
+    let current = '';
+    let quote: '"' | "'" | null = null;
+    let escaped = false;
+    let depth = 0;
+
+    for (const character of value) {
+      if (quote !== null) {
+        current += character;
+
+        if (escaped) {
+          escaped = false;
+        } else if (character === '\\') {
+          escaped = true;
+        } else if (character === quote) {
+          quote = null;
+        }
+
+        continue;
+      }
+
+      if (character === '"' || character === "'") {
+        quote = character;
+        current += character;
+        continue;
+      }
+
+      if (
+        character === '{' ||
+        character === '[' ||
+        character === '('
+      ) {
+        depth += 1;
+        current += character;
+        continue;
+      }
+
+      if (
+        character === '}' ||
+        character === ']' ||
+        character === ')'
+      ) {
+        depth -= 1;
+
+        if (depth < 0) {
+          throw new Error(
+            'Unbalanced brackets in transform expression',
+          );
+        }
+
+        current += character;
+        continue;
+      }
+
+      if (character === ',' && depth === 0) {
+        const assignment = current.trim();
+
+        if (assignment) {
+          assignments.push(assignment);
+        }
+
+        current = '';
+        continue;
+      }
+
+      current += character;
+    }
+
+    if (quote !== null || depth !== 0) {
+      throw new Error(
+        'Unterminated value in transform expression',
+      );
+    }
+
+    const finalAssignment = current.trim();
+
+    if (finalAssignment) {
+      assignments.push(finalAssignment);
+    }
+
+    return assignments;
+  }
+
+  /**
+   * Parses safe literal values:
+   *
+   * true, false, null, 42, 19.99, "text", 'text', [], {}
+   *
+   * A bare identifier is retained as a plain string; it is never evaluated.
+   */
+  private parseTransformValue(value: string): unknown {
+    const trimmed = value.trim();
+
+    if (
+      trimmed.startsWith("'") &&
+      trimmed.endsWith("'") &&
+      trimmed.length >= 2
+    ) {
+      return trimmed.slice(1, -1);
+    }
+
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      // Allow simple unquoted words as string values, never executable code.
+      if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(trimmed)) {
+        return trimmed;
+      }
+
+      throw new Error(
+        `Invalid transform value: "${value}"`,
+      );
+    }
+  }
+
+  /**
+   * Evaluates a simple condition and writes its result into conditionResult.
+   *
+   * The initial executor supports comparison, while branch routing through
+   * source handles will be implemented in the next milestone.
    */
   private executeConditionNode(
     node: WorkflowNode,
@@ -339,7 +533,6 @@ private async executeNode(
         : undefined;
 
     if (!field || !operator) {
-      // A condition without configuration is non-blocking during this phase.
       return {
         ...data,
         conditionResult: true,
@@ -386,8 +579,8 @@ private async executeNode(
   }
 
   /**
-   * Waits for a configured period, capped to five seconds to keep the
-   * initial polling worker responsive and testable.
+   * Delays for a configured number of milliseconds. The five-second cap
+   * protects the first polling-worker implementation from overly long jobs.
    */
   private async executeDelayNode(
     node: WorkflowNode,
@@ -418,14 +611,18 @@ private async executeNode(
   }
 
   /**
-   * Safely obtains the optional config object stored in node.data.config.
+   * Reads config values used by Condition and Delay nodes.
    */
   private nodeConfig(
     node: WorkflowNode,
   ): Record<string, unknown> {
     const config = node.data?.config;
 
-    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    if (
+      !config ||
+      typeof config !== 'object' ||
+      Array.isArray(config)
+    ) {
       return {};
     }
 
@@ -433,7 +630,7 @@ private async executeNode(
   }
 
   /**
-   * Uses the editor label in errors when available, otherwise the node ID.
+   * Uses the human-readable canvas label in error messages when available.
    */
   private nodeLabel(node: WorkflowNode): string {
     const label = node.data?.label;
