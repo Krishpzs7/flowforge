@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Pool, PoolClient } from 'pg';
+import { Pool } from 'pg';
 import {
   ExecutionResult,
   WorkflowExecutionService,
