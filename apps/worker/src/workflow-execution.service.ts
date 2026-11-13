@@ -231,9 +231,15 @@ export class WorkflowExecutionService {
       return null;
     }
 
-    return definition.nodes.find(
+    const next = definition.nodes.find(
       (candidate) => candidate.id === edge.target,
-    ) ?? null;
+    );
+
+    if (!next) {
+      throw new Error(`Target node "${edge.target}" not found in workflow definition`);
+    }
+
+    return next;
   }
 
   /**
