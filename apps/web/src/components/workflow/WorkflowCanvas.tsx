@@ -325,12 +325,12 @@ function CanvasInner() {
     (event: React.DragEvent) => {
       event.preventDefault();
 
-      const nodeType = event.dataTransfer.getData(
-        "application/flowforge-node-type",
-      );
-      const nodeName = event.dataTransfer.getData(
-        "application/flowforge-node-name",
-      );
+      const nodeType =
+        event.dataTransfer.getData("application/tekflow-node-type") ||
+        event.dataTransfer.getData("application/flowforge-node-type");
+      const nodeName =
+        event.dataTransfer.getData("application/tekflow-node-name") ||
+        event.dataTransfer.getData("application/flowforge-node-name");
 
       if (!nodeType || !nodeName) {
         return;

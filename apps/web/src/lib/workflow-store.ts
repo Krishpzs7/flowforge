@@ -66,8 +66,10 @@ type WorkflowStore = {
 let nodeCounter = 0;
 let logCounter = 0;
 
-const STORAGE_KEY = "flowforge-workflow-v1";
-const WORKFLOW_ID_STORAGE_KEY = "flowforge-workflow-id-v1";
+const STORAGE_KEY = "tekflow-workflow-v1";
+const LEGACY_STORAGE_KEY = "flowforge-workflow-v1";
+const WORKFLOW_ID_STORAGE_KEY = "tekflow-workflow-id-v1";
+const LEGACY_WORKFLOW_ID_STORAGE_KEY = "flowforge-workflow-id-v1";
 
 // Initial demo workflow used for new users and Reset demo.
 const demoNodes: Node[] = [
@@ -204,8 +206,12 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   },
 
   loadFromLocalStorage: () => {
-    const rawWorkflow = localStorage.getItem(STORAGE_KEY);
-    const storedWorkflowId = localStorage.getItem(WORKFLOW_ID_STORAGE_KEY);
+    const rawWorkflow =
+      localStorage.getItem(STORAGE_KEY) ??
+      localStorage.getItem(LEGACY_STORAGE_KEY);
+    const storedWorkflowId =
+      localStorage.getItem(WORKFLOW_ID_STORAGE_KEY) ??
+      localStorage.getItem(LEGACY_WORKFLOW_ID_STORAGE_KEY);
 
     if (!rawWorkflow) {
       return false;

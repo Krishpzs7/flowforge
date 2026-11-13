@@ -43,7 +43,7 @@ export class WorkerService
       connectionString: databaseUrl,
     });
 
-    this.logger.log('FlowForge worker started');
+    this.logger.log('TekFlow worker started');
 
     // Run the polling loop in the background so Nest can finish startup.
     void this.pollAndProcessRuns();

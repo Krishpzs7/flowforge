@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "FlowForge",
-    template: "%s | FlowForge",
+    default: "TekFlow",
+    template: "%s | TekFlow",
   },
   description:
     "Cloud-native visual workflow automation platform for designing, executing, and monitoring event-driven workflows.",
