@@ -233,7 +233,61 @@ function CanvasInner() {
           edge.target === connection.target,
       );
 
-      return !alreadyConnected;
+      if (alreadyConnected) {
+        return false;
+      }
+
+      if (sourceNodeType === "condition") {
+        // Each named handle (true / false) may connect to exactly one target.
+        // React Flow writes the handle id into connection.sourceHandle.
+        const handle = (connection as Connection).sourceHandle ?? "";
+        const handleAlreadyUsed = edges.some(
+          (edge) =>
+            edge.source === connection.source &&
+            edge.sourceHandle === handle,
+        );
+
+        if (handleAlreadyUsed) {
+          return false;
+        }
+      } else {
+        // Non-Condition nodes have a single execution path; a second outgoing
+        // edge would be silently ignored by the worker.
+        const hasOutgoing = edges.some(
+          (edge) => edge.source === connection.source,
+        );
+
+        if (hasOutgoing) {
+          return false;
+        }
+      }
+
+      // Cycle detection: walk the existing graph from the proposed target.
+      // If we can reach the proposed source, adding this edge would create a cycle.
+      const reachable = new Set<string>();
+      const stack = [connection.target];
+
+      while (stack.length > 0) {
+        const current = stack.pop()!;
+
+        if (current === connection.source) {
+          return false;
+        }
+
+        if (reachable.has(current)) {
+          continue;
+        }
+
+        reachable.add(current);
+
+        for (const edge of edges) {
+          if (edge.source === current) {
+            stack.push(edge.target);
+          }
+        }
+      }
+
+      return true;
     },
     [edges, nodes],
   );
