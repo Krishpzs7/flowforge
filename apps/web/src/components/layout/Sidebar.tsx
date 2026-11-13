@@ -32,6 +32,8 @@ export default function Sidebar() {
     nodeType: string,
     nodeName: string
   ) => {
+    event.dataTransfer.setData("application/tekflow-node-type", nodeType);
+    event.dataTransfer.setData("application/tekflow-node-name", nodeName);
     event.dataTransfer.setData("application/flowforge-node-type", nodeType);
     event.dataTransfer.setData("application/flowforge-node-name", nodeName);
     event.dataTransfer.effectAllowed = "move";

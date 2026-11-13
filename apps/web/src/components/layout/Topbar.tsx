@@ -239,7 +239,7 @@ export default function Topbar() {
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-muted/20 px-4">
       <div className="flex items-center gap-3">
         <div className="flex items-baseline gap-2">
-          <p className="text-base font-bold tracking-tight">FlowForge</p>
+          <p className="text-base font-bold tracking-tight">TekFlow</p>
           <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Workflow editor
           </p>

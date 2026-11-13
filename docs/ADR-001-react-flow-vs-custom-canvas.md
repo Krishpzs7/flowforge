@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-FlowForge needs a node-based visual editor for constructing workflows. Building drag/drop, zoom/pan, edge routing, and minimap from scratch would consume significant engineering time without adding portfolio value.
+TekFlow needs a node-based visual editor for constructing workflows. Building drag/drop, zoom/pan, edge routing, and minimap from scratch would consume significant engineering time without adding portfolio value.
 
 ## Decision
 
