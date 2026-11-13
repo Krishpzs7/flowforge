@@ -11,13 +11,8 @@
     "build": "turbo build",
     "lint": "turbo lint"
   },
+  "packageManager": "npm@11.19.0",
   "devDependencies": {
     "turbo": "^2.10.11"
-  },
-  "devEngines": {
-    "packageManager": {
-      "name": "npm",
-      "version": ">=10.9.2"
-    }
   }
 }
